@@ -4,8 +4,8 @@ import (
     "net/http"
 )
 
-func Router() {
+func InternalRouter() {
     mux := http.NewServeMux()
-    mux.HandleFunc("/", wispHandler)
+    mux.HandleFunc("/", wisp)
     http.ListenAndServe(":8080", mux)
 }
