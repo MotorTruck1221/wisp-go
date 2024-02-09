@@ -18,7 +18,7 @@ const (
     udpType = 0x02
 )
 
-var connections = make(map [string] *websocket.Conn)
+var connections = make(map [uint32] *Connection)
 
 type WispPacket struct {
     Type byte
@@ -26,8 +26,19 @@ type WispPacket struct {
     data []byte
 }
 
+type Connection struct {
+    client *net.Conn 
+    remainingBuffer []byte
+}
+
 type ContinuePacket struct {
     bufferRemaining uint32 
+}
+
+type DataPacket struct {
+    conmType []byte 
+    streamID uint32
+    data []byte
 }
 
 func packetParser(data []byte) WispPacket {
@@ -46,10 +57,12 @@ func wsHandler(ws *websocket.Conn, wg *sync.WaitGroup) {
         if packet.Type == connect {
             port := binary.LittleEndian.Uint16(packet.data[1:3])
             hostname := string(packet.data[3:])
-            fmt.Println("Connecting to host:", hostname, "on port:", port)
-            conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port))
-            if err != nil { fmt.Println("Error connecting to host:", err) }
-            fmt.Println("Connected to host", "conn:", conn)
+            conntype := packet.data[0]
+            switch conntype {
+                case tcpType:
+                case udpType:
+                default:
+            }
         } else { fmt.Println("Unknown packet type received") }
     }
 }
