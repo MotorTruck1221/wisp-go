@@ -6,17 +6,27 @@ import (
     "github.com/gorilla/websocket"
     "sync"
     "encoding/binary"
-    "net"
+    "github.com/panjf2000/gnet"
 )
 
 const (
     connect = 0x01
-    data = 0x02
+    dataType = 0x02
     cont = 0x03
-    close = 0x04
+    closeType = 0x04
     tcpType = 0x01
     udpType = 0x02
 )
+
+
+type echoServer struct {
+	gnet.EventServer
+}
+
+func (es *echoServer) React(frame []byte, c gnet.Conn) (out []byte, action gnet.Action) {
+	out = append([]byte{}, frame...)
+	return
+}
 
 var connections = make(map [uint32] *Connection)
 
@@ -27,7 +37,7 @@ type WispPacket struct {
 }
 
 type Connection struct {
-    client *net.Conn 
+    client *websocket.Conn
     remainingBuffer []byte
 }
 
@@ -60,10 +70,17 @@ func wsHandler(ws *websocket.Conn, wg *sync.WaitGroup) {
             conntype := packet.data[0]
             switch conntype {
                 case tcpType:
+                    echo := new(echoServer)
+                    err := gnet.Serve(echo, fmt.Sprintf("tcp://%s:%d", hostname, port))
+                    if err != nil { fmt.Println("Error with gnet:", err) }
                 case udpType:
                 default:
             }
-        } else { fmt.Println("Unknown packet type received") }
+        }
+        if packet.Type == dataType {
+        }
+        if packet.Type == closeType {
+        }
     }
 }
 
