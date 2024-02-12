@@ -6,7 +6,8 @@ import (
     "github.com/gorilla/websocket"
     "sync"
     "encoding/binary"
-    "net"
+    //"net"
+    "crypto/tls"
     "bufio"
 )
 
@@ -28,7 +29,7 @@ type WispPacket struct {
 }
 
 type Connection struct {
-    client *net.Conn
+    client **tls.Conn
     remainingBuffer []byte
 }
 
@@ -49,6 +50,16 @@ func packetParser(data []byte) WispPacket {
     return WispPacket{dataType, streamID, payload}
 }
 
+func tcpHandler(conn *tls.Conn) {
+    //make this NON blocking
+    reader := bufio.NewReader(conn)
+    for {
+        data, err := reader.ReadBytes('\n')
+        if err != nil { fmt.Println("Error reading from tcp server:", err) }
+        fmt.Println("Data from tcp server:", string(data))
+    }
+}
+
 func wsHandler(ws *websocket.Conn, wg *sync.WaitGroup) {
     defer wg.Done()
     for {
@@ -61,32 +72,22 @@ func wsHandler(ws *websocket.Conn, wg *sync.WaitGroup) {
             conntype := packet.data[0]
             switch conntype {
                 case tcpType:
-                    conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port))
+                    //enabletls
+                    tlsConfig := &tls.Config{
+                        InsecureSkipVerify: true,
+                    }
+                    conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port), tlsConfig)
                     if err != nil { fmt.Println("Error connecting to tcp server:", err) }
                     defer conn.Close()
-                    connections[packet.streamID] = &Connection{&conn, make([]byte, 127)}
-                    fmt.Fprintf(conn, "GET / HTTP/1.0\r\n\r\n")
-                    reader, _ := bufio.NewReader(conn).Read(connections[packet.streamID].remainingBuffer)
-                    fmt.Println("Data read from tcp server:", connections[packet.streamID].remainingBuffer)
-                    fmt.Println("Reader:", reader)
+                    fmt.Println("Connected to tcp server")
+                    connections[packet.streamID] = &Connection{&conn, make([]byte, 128)}
+                    go tcpHandler(conn)
                 case udpType:
                 default:
             }
         }
         if packet.Type == dataType {
-            stream := connections[packet.streamID]
-            _, err := (*stream.client).Write(packet.data)
-            fmt.Println("Data written to tcp server:", packet.data)
-            if err != nil { fmt.Println("Error writing to tcp server:", err) }
-            //make the buffer decrease by one each time 
-            stream.remainingBuffer = stream.remainingBuffer[1:]
-            if len(stream.remainingBuffer) == 0 {
-                stream.remainingBuffer = make([]byte, 127)
-                continuePacket := ContinuePacket{127}
-                continuePacketBytes := make([]byte, 5)
-                binary.LittleEndian.PutUint32(continuePacketBytes, continuePacket.bufferRemaining)
-                ws.WriteMessage(websocket.BinaryMessage, continuePacketBytes)
-            }
+            fmt.Println("Data packet received")
         }
         if packet.Type == closeType {
         }
