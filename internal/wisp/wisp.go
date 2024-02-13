@@ -6,6 +6,7 @@ import (
     "github.com/gorilla/websocket"
     "sync"
     "encoding/binary"
+    "encoding/json"
     //"net"
     "crypto/tls"
     "bufio"
@@ -50,13 +51,26 @@ func packetParser(data []byte) WispPacket {
     return WispPacket{dataType, streamID, payload}
 }
 
-func tcpHandler(conn *tls.Conn) {
+func tcpHandler(conn *tls.Conn, tcpType byte, streamID uint32, ws *websocket.Conn) {
     //make this NON blocking
     reader := bufio.NewReader(conn)
     for {
         data, err := reader.ReadBytes('\n')
-        if err != nil { fmt.Println("Error reading from tcp server:", err) }
+        if err != nil {
+            fmt.Println("Error reading from tcp server:", err)
+            return
+        }
         fmt.Println("Data from tcp server:", string(data))
+        //build out data packet 
+        dataPacket := DataPacket{[]byte{tcpType}, streamID, data}
+        dataPacketBytes, err := json.Marshal(dataPacket)
+        if err != nil { fmt.Println("Error marshalling data packet:", err) }
+        //create wisp packet 
+        wispPacket := WispPacket{dataType, streamID, dataPacketBytes}
+        wispPacketBytes, err := json.Marshal(wispPacket)
+        if err != nil { fmt.Println("Error marshalling wisp packet:", err) }
+        //send wisp packet to client as binary message 
+        ws.WriteMessage(websocket.BinaryMessage, wispPacketBytes)
     }
 }
 
@@ -66,6 +80,7 @@ func wsHandler(ws *websocket.Conn, wg *sync.WaitGroup) {
         _, data, err := ws.ReadMessage()
         if err != nil { fmt.Println("Error reading message:", err) }
         packet := packetParser(data)
+        fmt.Println("Packet type:", packet.Type)
         if packet.Type == connect {
             port := binary.LittleEndian.Uint16(packet.data[1:3])
             hostname := string(packet.data[3:])
@@ -81,15 +96,10 @@ func wsHandler(ws *websocket.Conn, wg *sync.WaitGroup) {
                     defer conn.Close()
                     fmt.Println("Connected to tcp server")
                     connections[packet.streamID] = &Connection{&conn, make([]byte, 128)}
-                    go tcpHandler(conn)
+                    go tcpHandler(conn, tcpType, packet.streamID, ws)
                 case udpType:
                 default:
             }
-        }
-        if packet.Type == dataType {
-            fmt.Println("Data packet received")
-        }
-        if packet.Type == closeType {
         }
     }
 }

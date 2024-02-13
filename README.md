@@ -1,0 +1,21 @@
+Implementation status:
+
+- [ ] Base Packet Handling
+  - [ ] Connect payload
+    - [ ] TCP
+    - [ ] UDP
+  - [ ] Client payload (data)
+  - [ ] Server payload (data)
+  - [ ] Continue payload
+  - [ ] Close Payloads
+    - [ ] 0x01 Uknown
+    - [ ] 0x02 Voluntary
+    - [ ] 0x03 Network Error
+    - [ ] 0x41 Creation Invalid
+    - [ ] 0x42 Host Unreachable
+    - [ ] 0x43 Creation Timeout
+    - [ ] 0x44 Connection refused
+    - [ ] 0x47 TCP Timeout
+    - [ ] 0x48 Server blocked host 
+    - [ ] 0x49 Server throttle
+    - [ ] 0x81 Memory Error
