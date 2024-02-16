@@ -8,6 +8,7 @@
 - [ ] Add a contributing guide
 - [ ] Usable in your own Go projects
 - [ ] Examples
+- [ ] Comments and documentation
 - [x] Makefile
 
 ## Optional stuff:
