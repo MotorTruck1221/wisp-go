@@ -1,13 +1,14 @@
 # TODO:
 
-- [ ] CLI
+- [x] CLI (basic)
+- [ ] CLI (advanced)
 - [ ] AUR, and other ways to install
 - [ ] Add more information to the README
 - [ ] Add a license
 - [ ] Add a contributing guide
 - [ ] Usable in your own Go projects
 - [ ] Examples
-- [ ] Makefile
+- [x] Makefile
 
 ## Optional stuff:
 

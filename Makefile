@@ -12,7 +12,7 @@ download:
 
 run:
 	@echo "Running..."
-	@go run main.go
+	@go run main.go start
 
 linux: download
 	@echo "Building for Linux..."
