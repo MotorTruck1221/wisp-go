@@ -1,21 +1,14 @@
-Implementation status:
+# TODO:
 
-- [ ] Base Packet Handling
-  - [ ] Connect payload
-    - [ ] TCP
-    - [ ] UDP
-  - [ ] Client payload (data)
-  - [ ] Server payload (data)
-  - [ ] Continue payload
-  - [ ] Close Payloads
-    - [ ] 0x01 Uknown
-    - [ ] 0x02 Voluntary
-    - [ ] 0x03 Network Error
-    - [ ] 0x41 Creation Invalid
-    - [ ] 0x42 Host Unreachable
-    - [ ] 0x43 Creation Timeout
-    - [ ] 0x44 Connection refused
-    - [ ] 0x47 TCP Timeout
-    - [ ] 0x48 Server blocked host 
-    - [ ] 0x49 Server throttle
-    - [ ] 0x81 Memory Error
+- [ ] CLI
+- [ ] AUR, and other ways to install
+- [ ] Add more information to the README
+- [ ] Add a license
+- [ ] Add a contributing guide
+- [ ] Usable in your own Go projects
+- [ ] Examples
+- [ ] Makefile
+
+## Optional stuff:
+
+- [ ] Node.js Bindings

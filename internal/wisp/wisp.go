@@ -78,6 +78,7 @@ func wsHandler(ws *websocket.Conn, wg *sync.WaitGroup) {
         fmt.Println("Received packet:", packet)
         fmt.Println("Packet type:", packet.Type)
     }
+}
 
 func wisp(w http.ResponseWriter, r *http.Request) {
     ws, err := HandleUpgrade(w, r)
