@@ -10,6 +10,7 @@
 - [ ] Examples
 - [ ] Comments and documentation
 - [x] Makefile
+- [ ] CI/CD
 
 ## Optional stuff:
 
