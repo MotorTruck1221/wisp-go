@@ -53,6 +53,7 @@ func packetParser(data []byte) WispPacket {
     return WispPacket{dataType, streamID, payload}
 }
 
+//this is driving me insane
 //func tcpHandler(conn *tls.Conn, tcpType byte, streamID uint32, ws *websocket.Conn) {
 //    reader := bufio.NewReader(conn)
 //    for {
