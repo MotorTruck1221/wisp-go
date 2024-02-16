@@ -6,10 +6,11 @@ import (
     "github.com/gorilla/websocket"
     "sync"
     "encoding/binary"
-    "encoding/json"
     //"net"
+    //"encoding/json"
     "crypto/tls"
-    "bufio"
+    //"bufio"
+    "bytes"
 )
 
 const (
@@ -35,11 +36,12 @@ type Connection struct {
 }
 
 type ContinuePacket struct {
+    streamID uint32
     bufferRemaining uint32 
 }
 
 type DataPacket struct {
-    conmType []byte 
+    connType byte 
     streamID uint32
     data []byte
 }
@@ -51,28 +53,20 @@ func packetParser(data []byte) WispPacket {
     return WispPacket{dataType, streamID, payload}
 }
 
-func tcpHandler(conn *tls.Conn, tcpType byte, streamID uint32, ws *websocket.Conn) {
-    //make this NON blocking
-    reader := bufio.NewReader(conn)
-    for {
-        data, err := reader.ReadBytes('\n')
-        if err != nil {
-            fmt.Println("Error reading from tcp server:", err)
-            return
-        }
-        fmt.Println("Data from tcp server:", string(data))
-        //build out data packet 
-        dataPacket := DataPacket{[]byte{tcpType}, streamID, data}
-        dataPacketBytes, err := json.Marshal(dataPacket)
-        if err != nil { fmt.Println("Error marshalling data packet:", err) }
-        //create wisp packet 
-        wispPacket := WispPacket{dataType, streamID, dataPacketBytes}
-        wispPacketBytes, err := json.Marshal(wispPacket)
-        if err != nil { fmt.Println("Error marshalling wisp packet:", err) }
-        //send wisp packet to client as binary message 
-        ws.WriteMessage(websocket.BinaryMessage, wispPacketBytes)
-    }
-}
+//func tcpHandler(conn *tls.Conn, tcpType byte, streamID uint32, ws *websocket.Conn) {
+//    reader := bufio.NewReader(conn)
+//    for {
+ //       data, _ := reader.ReadBytes('\n')
+  //      dataPacket := DataPacket{tcpType, streamID, data}
+   //     dataPacketBytes := new(bytes.Buffer)
+    //    binary.Write(dataPacketBytes, binary.LittleEndian, dataPacket)
+    //    wispPacket := WispPacket{dataType, streamID, dataPacketBytes.Bytes()}
+     //   wispPacketBytes := new(bytes.Buffer)
+     //   binary.Write(wispPacketBytes, binary.LittleEndian, wispPacket)
+     //   fmt.Println("Sending data packet:", wispPacketBytes)
+     //   ws.WriteMessage(websocket.BinaryMessage, wispPacketBytes.Bytes())
+   // }
+//}
 
 func wsHandler(ws *websocket.Conn, wg *sync.WaitGroup) {
     defer wg.Done()
@@ -80,39 +74,22 @@ func wsHandler(ws *websocket.Conn, wg *sync.WaitGroup) {
         _, data, err := ws.ReadMessage()
         if err != nil { fmt.Println("Error reading message:", err) }
         packet := packetParser(data)
+        fmt.Println("Raw data:", data)
+        fmt.Println("Received packet:", packet)
         fmt.Println("Packet type:", packet.Type)
-        if packet.Type == connect {
-            port := binary.LittleEndian.Uint16(packet.data[1:3])
-            hostname := string(packet.data[3:])
-            conntype := packet.data[0]
-            switch conntype {
-                case tcpType:
-                    //enabletls
-                    tlsConfig := &tls.Config{
-                        InsecureSkipVerify: true,
-                    }
-                    conn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port), tlsConfig)
-                    if err != nil { fmt.Println("Error connecting to tcp server:", err) }
-                    defer conn.Close()
-                    fmt.Println("Connected to tcp server")
-                    connections[packet.streamID] = &Connection{&conn, make([]byte, 128)}
-                    go tcpHandler(conn, tcpType, packet.streamID, ws)
-                case udpType:
-                default:
-            }
-        }
     }
-}
 
 func wisp(w http.ResponseWriter, r *http.Request) {
     ws, err := HandleUpgrade(w, r)
     if err != nil { fmt.Println("Error with upgrade: ", err) }
     defer ws.Close()
-
-    continuePacket := ContinuePacket{0}
-    continuePacketBytes := make([]byte, 5)
-    binary.LittleEndian.PutUint32(continuePacketBytes, continuePacket.bufferRemaining)
-    ws.WriteMessage(websocket.BinaryMessage, continuePacketBytes)
+    
+    //send the continue packet with streamID 0 and bufferRemaining 127
+    continuePacket := ContinuePacket{0, 127}
+    continuePacketBytes := new(bytes.Buffer)
+    binary.Write(continuePacketBytes, binary.LittleEndian, continuePacket)
+    fmt.Println("Sending continue packet:", continuePacketBytes.Bytes())
+    ws.WriteMessage(websocket.BinaryMessage, continuePacketBytes.Bytes())
 
     var wg sync.WaitGroup
     wg.Add(1)
