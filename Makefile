@@ -60,3 +60,6 @@ compress-mac:
 
 compress-all: compress-linux compress-windows compress-mac
 	@echo "Compressing all files..."
+
+format:
+	@go fmt ./...
