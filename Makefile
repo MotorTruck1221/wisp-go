@@ -1,5 +1,5 @@
 SHELL := bash
-.PHONY: all clean download run linux windows mac default
+.PHONY: all clean download run linux windows mac default compress compress-output compress-linux compress-windows compress-mac compress-all
 .DEFAULT_GOAL := default 
 
 clean:
