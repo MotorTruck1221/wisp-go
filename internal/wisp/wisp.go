@@ -8,6 +8,7 @@ import (
     "github.com/gobwas/ws/wsutil"
     "github.com/gobwas/ws"
     "net"
+    "crypto/tls"
 )
 
 const (
@@ -71,6 +72,25 @@ func continuePacket(streamID uint32, bufferRemaining uint32, conn net.Conn) {
     wsutil.WriteServerMessage(conn, ws.OpBinary, buffer.Bytes())
 }
 
+func tcpHandler(port uint16, hostname string, channel chan WispPacket) {
+    //attempt basic net.Dial (for none TLS connections)
+    fmt.Println("Attempting to connect to host: ", hostname , " on port: ", port)
+    conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port))
+    if err != nil {
+        tlsConfig := &tls.Config{
+            InsecureSkipVerify: true,
+        }
+        //attempt TLS connection if basic net.Dial fails
+        conn, err = tls.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port), tlsConfig)
+        if err != nil {
+            fmt.Println("Failed to connect to host: ", err)
+            return
+        }
+    }
+    defer conn.Close()
+    fmt.Println("Connected to host")
+}
+
 func handlePacket(channel chan WispPacket, conn net.Conn) {
     for {
         packet, ok := <-channel
@@ -84,11 +104,15 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
             fmt.Println("Connect packet")
             connectPacket := ConnectPacket{}
             //the port comes right after the destination hostname
-            connectPacket.DestinationHostname = packet.Payload[2:]
+            connectPacket.DestinationHostname = packet.Payload[3:]
             connectPacket.DestinationPort = binary.LittleEndian.Uint16(packet.Payload[1:3])
+            //either TCP or UDP 
+            connectPacket.Type = packet.Payload[0]
+            fmt.Println("TCP or UDP: ", connectPacket.Type)
             fmt.Println("Destination port: ", connectPacket.DestinationPort)
             fmt.Println("Destination hostname: ", string(connectPacket.DestinationHostname))
-            break
+            tcpChannel := make(chan WispPacket)
+            go tcpHandler(connectPacket.DestinationPort, string(connectPacket.DestinationHostname), tcpChannel)
         }
     }
 }
