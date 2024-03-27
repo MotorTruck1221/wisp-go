@@ -93,13 +93,14 @@ func tcpHandler(port uint16, hostname string, channel chan WispPacket) {
             return
         }
     }
-    defer conn.Close()
     fmt.Println("Connected to host")
+    defer conn.Close()
 }
 
 func handlePacket(channel chan WispPacket, conn net.Conn) {
     for {
         packet, ok := <-channel
+        fmt.Println("Received packet type: ", packet.Type)
         if !ok {
             fmt.Println("Channel closed")
             return
@@ -119,6 +120,8 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
             fmt.Println("Destination hostname: ", string(connectPacket.DestinationHostname))
             tcpChannel := make(chan WispPacket)
             go tcpHandler(connectPacket.DestinationPort, string(connectPacket.DestinationHostname), tcpChannel)
+        case dataType:
+            fmt.Println("Data packet")
         }
     }
 }
@@ -126,7 +129,7 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
 func wisp(w http.ResponseWriter, r *http.Request) {
     conn := HandleUpgrade(w, r)
     fmt.Println("Connection established")
-    continuePacket(0, 128, conn)
+    continuePacket(0, maxBufferSize, conn)
     channel := make(chan WispPacket)
     go readPacket(conn, channel)
     go handlePacket(channel, conn)
