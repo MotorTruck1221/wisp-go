@@ -39,7 +39,6 @@ type DataPacket struct {
 }
 
 type ContinuePacket struct {
-    StreamID uint32
     BufferRemaining uint32
 }
 
@@ -61,19 +60,26 @@ func readPacket(conn net.Conn, channel chan WispPacket) {
         fmt.Println("Received packet: ", packet.Type, packet.StreamID, packet.Payload)
         channel <- packet
     }
-    close(channel)
+    //close(channel)
 }
 
 func continuePacket(streamID uint32, bufferRemaining uint32, conn net.Conn) {
-    packet := ContinuePacket{StreamID: streamID, BufferRemaining: bufferRemaining}
+    packet := ContinuePacket{BufferRemaining: bufferRemaining}
     buffer := new(bytes.Buffer)
-    binary.Write(buffer, binary.LittleEndian, packet.StreamID)
     binary.Write(buffer, binary.LittleEndian, packet.BufferRemaining)
-    wsutil.WriteServerMessage(conn, ws.OpBinary, buffer.Bytes())
+    //create the wisp packet 
+    wispPacket := WispPacket{Type: continueType, StreamID: streamID, Payload: buffer.Bytes()}
+    //send the wisp packet 
+    wispBuffer := new(bytes.Buffer)
+    binary.Write(wispBuffer, binary.LittleEndian, wispPacket.Type)
+    binary.Write(wispBuffer, binary.LittleEndian, wispPacket.StreamID)
+    wispBuffer.Write(wispPacket.Payload)
+    fmt.Println("Sending continue packet: ", wispBuffer.Bytes())
+    wsutil.WriteServerMessage(conn, ws.OpBinary, wispBuffer.Bytes())
 }
 
 func tcpHandler(port uint16, hostname string, channel chan WispPacket) {
-    //attempt basic net.Dial (for none TLS connections)
+    //attempt basic net.Dial (for non TLS connections)
     fmt.Println("Attempting to connect to host: ", hostname , " on port: ", port)
     conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port))
     if err != nil {
@@ -120,7 +126,7 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
 func wisp(w http.ResponseWriter, r *http.Request) {
     conn := HandleUpgrade(w, r)
     fmt.Println("Connection established")
-    continuePacket(0, maxBufferSize, conn)
+    continuePacket(0, 128, conn)
     channel := make(chan WispPacket)
     go readPacket(conn, channel)
     go handlePacket(channel, conn)
