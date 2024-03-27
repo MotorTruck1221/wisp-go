@@ -15,24 +15,28 @@ func findFolder(dir string) string {
 	return dir
 }
 
-func serveStatic(dir string, mux *http.ServeMux) {
-    folder := findFolder(dir)
+func serveStatic(dir string, staticDir string, mux *http.ServeMux) {
+    folder := findFolder(staticDir)
     mux.HandleFunc(dir, func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, folder+r.URL.Path)
 	})
     fmt.Println("Serving static files from " + folder + " at " + dir)
 }
 
-func InternalRouter(host string, port string, wipDir string, staticDir string, dir string) {
+func InternalRouter(host string, port string, wispDir string, staticDir string, dir string) {
 	mux := http.NewServeMux()
-	mux.HandleFunc(wipDir, wisp)
+	mux.HandleFunc(wispDir, wisp)
 	fmt.Println("Listening on http://" + host + ":" + port + dir)
     if staticDir != "n/a/" {
-        serveStatic(staticDir, mux)
+        serveStatic(dir, staticDir, mux)
+    } else {
+       mux.HandleFunc(dir, func(w http.ResponseWriter, r *http.Request) { 
+           w.Write([]byte("Wisp server running on directory " + wispDir))
+         })
     }
 	if host == "0.0.0.0" {
 		fmt.Println("Also listening on http://localhost:" + port + dir)
 	}
-	fmt.Println("Wisp available at " + wipDir)
+	fmt.Println("Wisp available at " + wispDir)
 	http.ListenAndServe(host+":"+port, mux)
 }

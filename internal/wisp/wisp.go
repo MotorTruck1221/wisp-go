@@ -1,5 +1,15 @@
 package wisp
 
+import (
+    "net/http"
+    "fmt"
+    "encoding/binary"
+    "bytes"
+    "github.com/gobwas/ws/wsutil"
+    "github.com/gobwas/ws"
+    "net"
+)
+
 const (
     connectType = 0x01
     dataType = 0x02
@@ -7,4 +17,87 @@ const (
     closeType = 0x04
     tcpType = 0x01
     udpType = 0x02
+    //huge max size for now
+    maxBufferSize = 1000000
 )
+
+type WispPacket struct {
+    Type uint8
+    StreamID uint32
+    Payload []byte
+}
+
+type ConnectPacket struct {
+    Type uint8
+    DestinationPort uint16
+    DestinationHostname []byte
+}
+
+type DataPacket struct {
+    StreamPayload []byte
+}
+
+type ContinuePacket struct {
+    StreamID uint32
+    BufferRemaining uint32
+}
+
+type ClosePacket struct {
+    CloseType uint8
+    StreamID uint32
+    Reason uint8
+}
+
+func readPacket(conn net.Conn, channel chan WispPacket) {
+    packet := WispPacket{}
+    msg, op, _ := wsutil.ReadClientData(conn)
+    fmt.Println("Received message: ", msg)
+    fmt.Println("Received opcode: ", op)
+    if op == ws.OpBinary {
+        packet.Type = msg[0]
+        packet.StreamID = binary.LittleEndian.Uint32(msg[1:5])
+        packet.Payload = msg[5:]
+        fmt.Println("Received packet: ", packet.Type, packet.StreamID, packet.Payload)
+        channel <- packet
+    }
+    close(channel)
+}
+
+func continuePacket(streamID uint32, bufferRemaining uint32, conn net.Conn) {
+    packet := ContinuePacket{StreamID: streamID, BufferRemaining: bufferRemaining}
+    buffer := new(bytes.Buffer)
+    binary.Write(buffer, binary.LittleEndian, packet.StreamID)
+    binary.Write(buffer, binary.LittleEndian, packet.BufferRemaining)
+    wsutil.WriteServerMessage(conn, ws.OpBinary, buffer.Bytes())
+}
+
+func handlePacket(channel chan WispPacket, conn net.Conn) {
+    for {
+        packet, ok := <-channel
+        if !ok {
+            fmt.Println("Channel closed")
+            return
+        }
+        fmt.Println("Handling packet: ", packet)
+        switch packet.Type {
+        case connectType:
+            fmt.Println("Connect packet")
+            connectPacket := ConnectPacket{}
+            //the port comes right after the destination hostname
+            connectPacket.DestinationHostname = packet.Payload[2:]
+            connectPacket.DestinationPort = binary.LittleEndian.Uint16(packet.Payload[1:3])
+            fmt.Println("Destination port: ", connectPacket.DestinationPort)
+            fmt.Println("Destination hostname: ", string(connectPacket.DestinationHostname))
+            break
+        }
+    }
+}
+
+func wisp(w http.ResponseWriter, r *http.Request) {
+    conn := HandleUpgrade(w, r)
+    fmt.Println("Connection established")
+    continuePacket(0, maxBufferSize, conn)
+    channel := make(chan WispPacket)
+    go readPacket(conn, channel)
+    go handlePacket(channel, conn)
+}
