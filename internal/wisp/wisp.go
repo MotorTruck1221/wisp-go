@@ -36,7 +36,7 @@ type ConnectPacket struct {
 }
 
 type DataPacket struct {
-    StreamPayload []byte
+    StreamPayload []rune
 }
 
 type ContinuePacket struct {
@@ -104,6 +104,7 @@ func tcpHandler(port uint16, hostname string, streamID uint32, waitGroup *sync.W
         ServerName: hostname,
         MinVersion: tls.VersionTLS11,
         MaxVersion: tls.VersionTLS13,
+        NextProtos: []string{"h2", "http/1.1"},
     }
     tcpConn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port), &tlsOptions)
     if err != nil {
@@ -185,13 +186,13 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
         case dataType:
             fmt.Println("Data packet")
             dataPacket := DataPacket{}
-            dataPacket.StreamPayload = packet.Payload
+            dataPacket.StreamPayload = []rune(string(packet.Payload))
             //print all of the available connections
             fmt.Println("Available connections: ", connections)
             //send the payload to the appropriate connection 
             conn := connections[packet.StreamID]
             fmt.Println("Connection: ", conn)
-            conn.Conn.Write(dataPacket.StreamPayload)
+            conn.Conn.Write([]byte(string(dataPacket.StreamPayload)))
             buffer := make([]byte, maxBufferSize)
             n, err := conn.Conn.Read(buffer)
             if err != nil {
