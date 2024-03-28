@@ -36,7 +36,7 @@ type ConnectPacket struct {
 }
 
 type DataPacket struct {
-    StreamPayload []rune
+    StreamPayload []byte
 }
 
 type ContinuePacket struct {
@@ -60,10 +60,11 @@ var connections = make(map[uint32]*WispConnection)
 
 func readPacket(conn net.Conn, channel chan WispPacket) {
     packet := WispPacket{}
+    defer close(channel)
     for {
         msg, op, err := wsutil.ReadClientData(conn)
         if err != nil {
-            fmt.Println("Error reading message: ", err)
+            fmt.Println("Error reading message! (channel may be closed): ", err)
             return
         }
         //fmt.Println("Received message: ", msg)
@@ -76,7 +77,6 @@ func readPacket(conn net.Conn, channel chan WispPacket) {
             channel <- packet
         }
     }
-    //defer close(channel)
 }
 
 func continuePacket(streamID uint32, bufferRemaining uint32, conn net.Conn) {
@@ -100,7 +100,10 @@ func tcpHandler(port uint16, hostname string, streamID uint32, waitGroup *sync.W
     //attempt to connect via TLS 
     tlsOptions := tls.Config{
         InsecureSkipVerify: true,
-        MinVersion: tls.VersionTLS12,
+        //pass the Host:
+        ServerName: hostname,
+        MinVersion: tls.VersionTLS11,
+        MaxVersion: tls.VersionTLS13,
     }
     tcpConn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port), &tlsOptions)
     if err != nil {
@@ -153,13 +156,13 @@ func closePacket(streamID uint32, conn net.Conn, reason uint8) {
 }
 
 func handlePacket(channel chan WispPacket, conn net.Conn) {
-    defer close(channel)
     defer conn.Close()
     for {
         packet, ok := <-channel
         fmt.Println("Received packet type: ", packet.Type)
         if !ok {
             fmt.Println("Channel closed")
+            return
         }
         //fmt.Println("Handling packet: ", packet)
         switch packet.Type {
@@ -182,17 +185,16 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
         case dataType:
             fmt.Println("Data packet")
             dataPacket := DataPacket{}
-            dataPacket.StreamPayload = []rune(string(packet.Payload))
+            dataPacket.StreamPayload = packet.Payload
             //print all of the available connections
             fmt.Println("Available connections: ", connections)
             //send the payload to the appropriate connection 
             conn := connections[packet.StreamID]
             fmt.Println("Connection: ", conn)
-            conn.Conn.Write([]byte(string(dataPacket.StreamPayload)))
-            //read everything from the connection (headers, etc)
+            conn.Conn.Write(dataPacket.StreamPayload)
             buffer := make([]byte, maxBufferSize)
             n, err := conn.Conn.Read(buffer)
-            if err != nil { 
+            if err != nil {
                 fmt.Println("Error reading from connection: ", err)
             }
             fmt.Println("Received data: ", string(buffer[:n]))
@@ -209,6 +211,8 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
             connections[packet.StreamID].Conn.Close()
             //delete the connection from the map 
             delete(connections, packet.StreamID)
+            //kill any goroutines
+            return
         }
     }
 }
