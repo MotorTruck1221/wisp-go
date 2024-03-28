@@ -50,17 +50,23 @@ type ClosePacket struct {
 
 func readPacket(conn net.Conn, channel chan WispPacket) {
     packet := WispPacket{}
-    msg, op, _ := wsutil.ReadClientData(conn)
-    fmt.Println("Received message: ", msg)
-    fmt.Println("Received opcode: ", op)
-    if op == ws.OpBinary {
-        packet.Type = msg[0]
-        packet.StreamID = binary.LittleEndian.Uint32(msg[1:5])
-        packet.Payload = msg[5:]
-        fmt.Println("Received packet: ", packet.Type, packet.StreamID, packet.Payload)
-        channel <- packet
+    for {
+        msg, op, err := wsutil.ReadClientData(conn)
+        if err != nil {
+            fmt.Println("Error reading message: ", err)
+            return
+        }
+        //fmt.Println("Received message: ", msg)
+        fmt.Println("Received opcode: ", op)
+        if op == ws.OpBinary {
+            packet.Type = msg[0]
+            packet.StreamID = binary.LittleEndian.Uint32(msg[1:5])
+            packet.Payload = msg[5:]
+            //fmt.Println("Received packet: ", packet.Type, packet.StreamID, packet.Payload)
+            channel <- packet
+        }
     }
-    //close(channel)
+    //defer close(channel)
 }
 
 func continuePacket(streamID uint32, bufferRemaining uint32, conn net.Conn) {
@@ -78,9 +84,9 @@ func continuePacket(streamID uint32, bufferRemaining uint32, conn net.Conn) {
     wsutil.WriteServerMessage(conn, ws.OpBinary, wispBuffer.Bytes())
 }
 
-func tcpHandler(port uint16, hostname string, channel chan WispPacket) {
+func tcpHandler(port uint16, hostname string, channel chan WispPacket, streamID uint32) {
     //attempt basic net.Dial (for non TLS connections)
-    fmt.Println("Attempting to connect to host: ", hostname , " on port: ", port)
+    fmt.Println("Attempting to connect to host:", hostname, "on port:", port, "with streamID:", streamID)
     conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port))
     if err != nil {
         tlsConfig := &tls.Config{
@@ -98,14 +104,14 @@ func tcpHandler(port uint16, hostname string, channel chan WispPacket) {
 }
 
 func handlePacket(channel chan WispPacket, conn net.Conn) {
+    defer close(channel)
     for {
         packet, ok := <-channel
         fmt.Println("Received packet type: ", packet.Type)
         if !ok {
             fmt.Println("Channel closed")
-            return
         }
-        fmt.Println("Handling packet: ", packet)
+        //fmt.Println("Handling packet: ", packet)
         switch packet.Type {
         case connectType:
             fmt.Println("Connect packet")
@@ -119,7 +125,7 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
             fmt.Println("Destination port: ", connectPacket.DestinationPort)
             fmt.Println("Destination hostname: ", string(connectPacket.DestinationHostname))
             tcpChannel := make(chan WispPacket)
-            go tcpHandler(connectPacket.DestinationPort, string(connectPacket.DestinationHostname), tcpChannel)
+            go tcpHandler(connectPacket.DestinationPort, string(connectPacket.DestinationHostname), tcpChannel, packet.StreamID)
         case dataType:
             fmt.Println("Data packet")
         }
