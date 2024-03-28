@@ -9,6 +9,7 @@ import (
     "github.com/gobwas/ws"
     "net"
     "crypto/tls"
+    "sync"
 )
 
 const (
@@ -19,7 +20,7 @@ const (
     tcpType = 0x01
     udpType = 0x02
     //huge max size for now
-    maxBufferSize = 1000000
+    maxBufferSize = 128
 )
 
 type WispPacket struct {
@@ -35,7 +36,7 @@ type ConnectPacket struct {
 }
 
 type DataPacket struct {
-    StreamPayload []byte
+    StreamPayload []rune
 }
 
 type ContinuePacket struct {
@@ -47,6 +48,15 @@ type ClosePacket struct {
     StreamID uint32
     Reason uint8
 }
+
+type WispConnection struct {
+    StreamID uint32 
+    Conn net.Conn 
+    BufferRemaining uint32 
+}
+
+//create a map to store all the tcp connections utilizing the WispConnection struct
+var connections = make(map[uint32]*WispConnection)
 
 func readPacket(conn net.Conn, channel chan WispPacket) {
     packet := WispPacket{}
@@ -84,27 +94,67 @@ func continuePacket(streamID uint32, bufferRemaining uint32, conn net.Conn) {
     wsutil.WriteServerMessage(conn, ws.OpBinary, wispBuffer.Bytes())
 }
 
-func tcpHandler(port uint16, hostname string, channel chan WispPacket, streamID uint32) {
+func tcpHandler(port uint16, hostname string, streamID uint32, waitGroup *sync.WaitGroup) {
     //attempt basic net.Dial (for non TLS connections)
     fmt.Println("Attempting to connect to host:", hostname, "on port:", port, "with streamID:", streamID)
-    conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port))
+    //attempt to connect via TLS 
+    tlsOptions := tls.Config{
+        InsecureSkipVerify: true,
+        MinVersion: tls.VersionTLS12,
+    }
+    tcpConn, err := tls.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port), &tlsOptions)
     if err != nil {
-        tlsConfig := &tls.Config{
-            InsecureSkipVerify: true,
-        }
-        //attempt TLS connection if basic net.Dial fails
-        conn, err = tls.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port), tlsConfig)
+        conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port))
         if err != nil {
-            fmt.Println("Failed to connect to host: ", err)
+            fmt.Println("Error connecting to host: ", err)
             return
         }
+        fmt.Println("Connected to host (non-TLS)")
+        wispConnection := &WispConnection{StreamID: streamID, Conn: conn, BufferRemaining: maxBufferSize}
+        connections[streamID] = wispConnection 
+    } else {
+        fmt.Println("Connected to host (TLS)")
+        wispConnection := &WispConnection{StreamID: streamID, Conn: tcpConn, BufferRemaining: maxBufferSize}
+        connections[streamID] = wispConnection
     }
-    fmt.Println("Connected to host")
-    defer conn.Close()
+    defer waitGroup.Done()
+    //defer delete(connections, streamID)
+    //defer conn.Close()
+}
+
+func sendDataToClient(conn net.Conn, streamID uint32, payload []byte) {
+    //write the payload to the client 
+    wsutil.WriteServerMessage(conn, ws.OpBinary, payload)
+    //decrement the buffer size 
+    connection := connections[streamID]
+    connection.BufferRemaining -= 1
+    fmt.Println("Buffer remaining: ", connection.BufferRemaining)
+    //if the buffer size is zero, send a continue packet 
+    if connections[streamID].BufferRemaining == 0 {
+        continuePacket(streamID, maxBufferSize, conn)
+        //delete the connection from the map 
+        delete(connections, streamID)
+    }
+}
+
+func closePacket(streamID uint32, conn net.Conn, reason uint8) {
+    packet := ClosePacket{CloseType: closeType, StreamID: streamID, Reason: reason}
+    buffer := new(bytes.Buffer)
+    binary.Write(buffer, binary.LittleEndian, packet.CloseType)
+    binary.Write(buffer, binary.LittleEndian, packet.StreamID)
+    binary.Write(buffer, binary.LittleEndian, packet.Reason)
+    fmt.Println("Sending close packet: ", buffer.Bytes())
+    wispPacket := WispPacket{Type: closeType, StreamID: streamID, Payload: buffer.Bytes()}
+    wispBuffer := new(bytes.Buffer)
+    binary.Write(wispBuffer, binary.LittleEndian, wispPacket.Type)
+    binary.Write(wispBuffer, binary.LittleEndian, wispPacket.StreamID)
+    wispBuffer.Write(wispPacket.Payload)
+    wsutil.WriteServerMessage(conn, ws.OpBinary, wispBuffer.Bytes())
 }
 
 func handlePacket(channel chan WispPacket, conn net.Conn) {
     defer close(channel)
+    defer conn.Close()
     for {
         packet, ok := <-channel
         fmt.Println("Received packet type: ", packet.Type)
@@ -124,10 +174,41 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
             fmt.Println("TCP or UDP: ", connectPacket.Type)
             fmt.Println("Destination port: ", connectPacket.DestinationPort)
             fmt.Println("Destination hostname: ", string(connectPacket.DestinationHostname))
-            tcpChannel := make(chan WispPacket)
-            go tcpHandler(connectPacket.DestinationPort, string(connectPacket.DestinationHostname), tcpChannel, packet.StreamID)
+            //create a new waitgroup 
+            var waitGroup sync.WaitGroup 
+            waitGroup.Add(1)
+            go tcpHandler(connectPacket.DestinationPort, string(connectPacket.DestinationHostname), packet.StreamID, &waitGroup)
+            waitGroup.Wait()            
         case dataType:
             fmt.Println("Data packet")
+            dataPacket := DataPacket{}
+            dataPacket.StreamPayload = []rune(string(packet.Payload))
+            //print all of the available connections
+            fmt.Println("Available connections: ", connections)
+            //send the payload to the appropriate connection 
+            conn := connections[packet.StreamID]
+            fmt.Println("Connection: ", conn)
+            conn.Conn.Write([]byte(string(dataPacket.StreamPayload)))
+            //read everything from the connection (headers, etc)
+            buffer := make([]byte, maxBufferSize)
+            n, err := conn.Conn.Read(buffer)
+            if err != nil { 
+                fmt.Println("Error reading from connection: ", err)
+            }
+            fmt.Println("Received data: ", string(buffer[:n]))
+            sendDataToClient(conn.Conn, packet.StreamID, buffer[:n])
+         case closeType:
+            fmt.Println("Close packet")
+            //get the reason for closing the connection 
+            reason := packet.Payload[0]
+            closePacket(packet.StreamID, conn, reason)
+            fmt.Println("Client decided to terminate with reason: ", reason)
+            //close the connection(s)
+            conn.Close()
+            //close the tcp connection 
+            connections[packet.StreamID].Conn.Close()
+            //delete the connection from the map 
+            delete(connections, packet.StreamID)
         }
     }
 }
@@ -139,4 +220,5 @@ func wisp(w http.ResponseWriter, r *http.Request) {
     channel := make(chan WispPacket)
     go readPacket(conn, channel)
     go handlePacket(channel, conn)
+    //defer conn.Close()
 }
