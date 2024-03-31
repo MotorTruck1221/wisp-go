@@ -1,0 +1,21 @@
+# Maintainer: MotorTruck1221 motortruck1221@protonmail.com
+
+pkgname=wisp-server-go-git
+pkgver=0.0.1
+pkgrel=1
+pkgdesc="A Wisp Server and implementation in Go"
+url="https://github.com/motortruck1221/wisp-go"
+arch=('x86_64')
+license=('AGPL3')
+depends=('make' 'go' 'upx')
+makedepends=('git')
+provides=('wisp-server-go')
+conflicts=('wisp-server-go')
+source=("git+$url")
+sha256sums=('SKIP')
+package() {
+    cd "${srcdir}/wisp-go"
+    make default
+    make compress
+    install -Dm755 "${srcdir}/wisp-go/bin/wisp-server-go" "${pkgdir}/usr/bin/wisp-server-go"
+}
