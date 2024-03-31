@@ -98,7 +98,7 @@ func continuePacket(streamID uint32, bufferRemaining uint32, conn net.Conn) {
     wsutil.WriteServerMessage(conn, ws.OpBinary, wispBuffer.Bytes())
 }
 
-func tcpHandler(port uint16, hostname string, streamID uint32, waitGroup *sync.WaitGroup) {
+func tcpHandler(port uint16, hostname string, streamID uint32, waitGroup *sync.WaitGroup, wsConn net.Conn) {
     //attempt basic net.Dial (for non TLS connections)
     fmt.Println("Attempting to connect to host:", hostname, "on port:", port, "with streamID:", streamID)
     //attempt to connect via TLS 
@@ -111,7 +111,7 @@ func tcpHandler(port uint16, hostname string, streamID uint32, waitGroup *sync.W
         conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", hostname, port))
         if err != nil {
             fmt.Println("Error connecting to host: ", err)
-            return
+            closePacket(streamID, wsConn, 0x42)
         } else {
             fmt.Println("Connected to host via basic net.Dial")
             wispConnection := &WispConnection{StreamID: streamID, Conn: conn, BufferRemaining: maxBufferSize}
@@ -196,7 +196,7 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
             //create a new waitgroup 
             var waitGroup sync.WaitGroup 
             waitGroup.Add(1)
-            go tcpHandler(connectPacket.DestinationPort, string(connectPacket.DestinationHostname), packet.StreamID, &waitGroup)
+            go tcpHandler(connectPacket.DestinationPort, string(connectPacket.DestinationHostname), packet.StreamID, &waitGroup, conn)
             waitGroup.Wait()            
         case dataType:
             fmt.Println("Data packet")
@@ -207,7 +207,14 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
             //send the payload to the appropriate connection 
             tcpConn := connections[packet.StreamID]
             fmt.Println("Connection: ", conn)
-            tcpConn.Conn.Write([]byte(dataPacket.StreamPayload))
+            //if the connection was closed, dont panic rather just return
+            if tcpConn == nil {
+                fmt.Println("Connection was closed")
+                return
+            }
+            //make sure the streamPayload is correct and not modified 
+            fmt.Println("Sending data to connection: ", string(dataPacket.StreamPayload))
+            tcpConn.Conn.Write(dataPacket.StreamPayload)
             buffer := make([]byte, 1000000)
             n, err := tcpConn.Conn.Read(buffer)
             if err != nil {
