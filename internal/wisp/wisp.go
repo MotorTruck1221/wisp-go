@@ -212,7 +212,6 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
                 fmt.Println("Connection was closed")
                 return
             }
-            //make sure the streamPayload is correct and not modified 
             fmt.Println("Sending data to connection: ", string(dataPacket.StreamPayload))
             tcpConn.Conn.Write(dataPacket.StreamPayload)
             buffer := make([]byte, 1000000)
@@ -226,7 +225,7 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
             fmt.Println("Close packet")
             //get the reason for closing the connection 
             reason := packet.Payload[0]
-            closePacket(packet.StreamID, conn, reason)
+            //closePacket(packet.StreamID, conn, reason)
             fmt.Println("Client decided to terminate with reason: ", reason)
             //close the connection(s)
             conn.Close()
