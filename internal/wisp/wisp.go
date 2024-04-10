@@ -201,20 +201,22 @@ func handlePacket(channel chan WispPacket, conn net.Conn) {
         case dataType:
             fmt.Println("Data packet")
             dataPacket := DataPacket{}
+            //print packet payload 
             dataPacket.StreamPayload = packet.Payload
+            fmt.Println("Data packet payload: ", string(dataPacket.StreamPayload))
             //print all of the available connections
             fmt.Println("Available connections: ", connections)
             //send the payload to the appropriate connection 
             tcpConn := connections[packet.StreamID]
+            fmt.Println("Connection: ", tcpConn)
             fmt.Println("Connection: ", conn)
             //if the connection was closed, dont panic rather just return
             if tcpConn == nil {
                 fmt.Println("Connection was closed")
                 return
             }
-            fmt.Println("Sending data to connection: ", string(dataPacket.StreamPayload))
             tcpConn.Conn.Write(dataPacket.StreamPayload)
-            buffer := make([]byte, 1000000)
+            buffer := make([]byte, 100000)
             n, err := tcpConn.Conn.Read(buffer)
             if err != nil {
                 fmt.Println("Error reading from connection: ", err)
