@@ -1,18 +1,15 @@
 package wisp
 
 import (
-    "github.com/gorilla/websocket"
-    "net/http"
+	"net/http"
+	"github.com/gobwas/ws"
+	//"github.com/gobwas/ws/wsutil"
+    "fmt"
+    "net"
 )
 
-var upgrader = websocket.Upgrader{
-    CheckOrigin: func(r *http.Request) bool {
-        return true
-    },
-    Subprotocols: []string{"wisp-v1"},
+func HandleUpgrade(w http.ResponseWriter, r *http.Request) net.Conn {
+    conn, _, _, err := ws.UpgradeHTTP(r, w)
+    if err != nil { fmt.Println(err) }
+    return conn
 }
-
-
-func HandleUpgrade(w http.ResponseWriter, r *http.Request) (*websocket.Conn, error) {
-    return upgrader.Upgrade(w, r, nil)
-} 

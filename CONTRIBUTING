@@ -1,0 +1,17 @@
+# Contributing
+
+Contributions are welcome! Here's how you can help:
+- **Report bugs**: If you find a bug, please open an issue.
+- **Fix bugs**: If you can fix a bug, please open a pull request.
+- **Add features**: If you want to add a feature, please open a pull request.
+- **Improve documentation**: If you can improve the documentation, please open a pull request.
+
+Some examples of adding features include:
+- Adding Node Bindings 
+- Adding a router (Chi, Gorilla, etc.)
+- Adding a useful feature to the CLI
+
+## Some guidelines:
+- Make sure your code is well tested.
+- Make sure your code is well documented (comments suffice).
+- Make sure your code is well formatted (run `go fmt`)

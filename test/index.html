@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="icon" href="data:;base64,=">
+
+    <script defer src="https://cdn.jsdelivr.net/npm/libcurl.js@latest/libcurl.js" onload="libcurl.load_wasm('https://cdn.jsdelivr.net/npm/libcurl.js@latest/libcurl.wasm');"></script>
+    <script>
+      document.addEventListener("libcurl_load", ()=>{
+        libcurl.set_websocket("ws://localhost:8080/wisp/");
+        console.log(`loaded libcurl.js v${libcurl.version.lib}`);
+      });
+    </script>
+  </head>
+  <body>
+      <h1> Wisp Test </h1>
+  </body>
+</html>

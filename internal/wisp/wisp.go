@@ -3,97 +3,132 @@ package wisp
 import (
     "net/http"
     "fmt"
-    "github.com/gorilla/websocket"
-    "sync"
     "encoding/binary"
-    //"net"
-    //"encoding/json"
-    "crypto/tls"
-    //"bufio"
     "bytes"
+    "github.com/gobwas/ws/wsutil"
+    "github.com/gobwas/ws"
+    "net"
+    "sync"
+    "C"
+    "syscall"
 )
 
 const (
-    connect = 0x01
+    connectType = 0x01
     dataType = 0x02
-    cont = 0x03
+    continueType = 0x03
     closeType = 0x04
     tcpType = 0x01
     udpType = 0x02
+    //huge max size for now
+    maxBufferSize = 128
 )
 
-var connections = make(map [uint32] *Connection)
-
 type WispPacket struct {
-    Type byte
-    streamID uint32
-    data []byte
+    Type uint8
+    StreamID uint32
+    Payload []byte
 }
 
-type Connection struct {
-    client **tls.Conn
-    remainingBuffer []byte
-}
-
-type ContinuePacket struct {
-    streamID uint32
-    bufferRemaining uint32 
+type ConnectPacket struct {
+    Type uint8
+    DestinationPort uint16
+    DestinationHostname []byte
 }
 
 type DataPacket struct {
-    connType byte 
-    streamID uint32
-    data []byte
+    StreamPayload []byte
 }
 
-func packetParser(data []byte) WispPacket {
-    dataType := data[0]
-    streamID := binary.LittleEndian.Uint32(data[1:5])
-    payload := data[5:]
-    return WispPacket{dataType, streamID, payload}
+type DataResponsePacket struct {
+    StreamPayload []byte 
 }
 
-//func tcpHandler(conn *tls.Conn, tcpType byte, streamID uint32, ws *websocket.Conn) {
-//    reader := bufio.NewReader(conn)
-//    for {
- //       data, _ := reader.ReadBytes('\n')
-  //      dataPacket := DataPacket{tcpType, streamID, data}
-   //     dataPacketBytes := new(bytes.Buffer)
-    //    binary.Write(dataPacketBytes, binary.LittleEndian, dataPacket)
-    //    wispPacket := WispPacket{dataType, streamID, dataPacketBytes.Bytes()}
-     //   wispPacketBytes := new(bytes.Buffer)
-     //   binary.Write(wispPacketBytes, binary.LittleEndian, wispPacket)
-     //   fmt.Println("Sending data packet:", wispPacketBytes)
-     //   ws.WriteMessage(websocket.BinaryMessage, wispPacketBytes.Bytes())
-   // }
-//}
+type ContinuePacket struct {
+    BufferRemaining uint32
+}
 
-func wsHandler(ws *websocket.Conn, wg *sync.WaitGroup) {
-    defer wg.Done()
+type ClosePacket struct {
+    CloseType uint8
+    StreamID uint32
+    Reason uint8
+}
+
+type WispConnection struct {
+    StreamID uint32 
+    Conn net.Conn 
+    BufferRemaining uint32 
+}
+
+//create a map to store all the tcp connections utilizing the WispConnection struct
+var connections = make(map[uint32]*WispConnection)
+
+func readPacket(conn net.Conn, channel chan WispPacket) {
+    packet := WispPacket{}
+    defer close(channel)
     for {
-        _, data, err := ws.ReadMessage()
-        if err != nil { fmt.Println("Error reading message:", err) }
-        packet := packetParser(data)
-        fmt.Println("Raw data:", data)
-        fmt.Println("Received packet:", packet)
-        fmt.Println("Packet type:", packet.Type)
+        msg, op, err := wsutil.ReadClientData(conn)
+        if err != nil {
+            fmt.Println("Error reading message! (channel may be closed): ", err)
+            return
+        }
+        //fmt.Println("Received message: ", msg)
+        fmt.Println("Received opcode: ", op)
+        if op == ws.OpBinary {
+            packet.Type = msg[0]
+            packet.StreamID = binary.LittleEndian.Uint32(msg[1:5])
+            packet.Payload = msg[5:]
+            //fmt.Println("Received packet: ", packet.Type, packet.StreamID, packet.Payload)
+            channel <- packet
+        }
     }
 }
 
-func wisp(w http.ResponseWriter, r *http.Request) {
-    ws, err := HandleUpgrade(w, r)
-    if err != nil { fmt.Println("Error with upgrade: ", err) }
-    defer ws.Close()
-    
-    //send the continue packet with streamID 0 and bufferRemaining 127
-    continuePacket := ContinuePacket{0, 127}
-    continuePacketBytes := new(bytes.Buffer)
-    binary.Write(continuePacketBytes, binary.LittleEndian, continuePacket)
-    fmt.Println("Sending continue packet:", continuePacketBytes.Bytes())
-    ws.WriteMessage(websocket.BinaryMessage, continuePacketBytes.Bytes())
+func continuePacket(streamID uint32, bufferRemaining uint32, conn net.Conn) {
+    packet := ContinuePacket{BufferRemaining: bufferRemaining}
+    buffer := new(bytes.Buffer)
+    binary.Write(buffer, binary.LittleEndian, packet.BufferRemaining)
+    //create the wisp packet 
+    wispPacket := WispPacket{Type: continueType, StreamID: streamID, Payload: buffer.Bytes()}
+    //send the wisp packet 
+    wispBuffer := new(bytes.Buffer)
+    binary.Write(wispBuffer, binary.LittleEndian, wispPacket.Type)
+    binary.Write(wispBuffer, binary.LittleEndian, wispPacket.StreamID)
+    wispBuffer.Write(wispPacket.Payload)
+    fmt.Println("Sending continue packet: ", wispBuffer.Bytes())
+    wsutil.WriteServerMessage(conn, ws.OpBinary, wispBuffer.Bytes())
+}
 
-    var wg sync.WaitGroup
-    wg.Add(1)
-    go wsHandler(ws, &wg)
-    wg.Wait()
+func tcpHandler(port uint16, hostname string, streamID uint32, waitGroup *sync.WaitGroup, wsConn net.Conn) {
+}
+
+
+
+func closePacket(streamID uint32, conn net.Conn, reason uint8) {
+    packet := ClosePacket{CloseType: closeType, StreamID: streamID, Reason: reason}
+    buffer := new(bytes.Buffer)
+    binary.Write(buffer, binary.LittleEndian, packet.CloseType)
+    binary.Write(buffer, binary.LittleEndian, packet.StreamID)
+    binary.Write(buffer, binary.LittleEndian, packet.Reason)
+    fmt.Println("Sending close packet: ", buffer.Bytes())
+    wispPacket := WispPacket{Type: closeType, StreamID: streamID, Payload: buffer.Bytes()}
+    wispBuffer := new(bytes.Buffer)
+    binary.Write(wispBuffer, binary.LittleEndian, wispPacket.Type)
+    binary.Write(wispBuffer, binary.LittleEndian, wispPacket.StreamID)
+    wispBuffer.Write(wispPacket.Payload)
+    wsutil.WriteServerMessage(conn, ws.OpBinary, wispBuffer.Bytes())
+}
+
+func handlePacket(channel chan WispPacket, conn net.Conn) {
+    defer conn.Close()
+}
+
+func wisp(w http.ResponseWriter, r *http.Request) {
+    conn := HandleUpgrade(w, r)
+    fmt.Println("Connection established")
+    continuePacket(0, maxBufferSize, conn)
+    channel := make(chan WispPacket)
+    go readPacket(conn, channel)
+    go handlePacket(channel, conn)
+    //defer conn.Close()
 }
