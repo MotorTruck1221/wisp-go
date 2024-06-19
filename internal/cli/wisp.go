@@ -2,7 +2,7 @@ package cli
 
 import (
     "github.com/spf13/cobra"
-    "github.com/motortruck1221/wisp-go/internal/wisp"
+    //"github.com/motortruck1221/wisp-go/internal/wisp"
 )
 
 func init() {
@@ -17,11 +17,11 @@ var startCmd = &cobra.Command{
     Short: "Start the wisp server",
     Long: "Start the wisp server",
     Run: func(cmd *cobra.Command, args []string) {
-        host := cmd.Flag("host").Value.String()
-        port := cmd.Flag("port").Value.String()
-        dir := cmd.Flag("dir").Value.String()
-        if dir[0] != '/' { dir = "/" + dir }
-        if dir[len(dir) - 1] != '/' { dir = dir + "/" }
-        wisp.InternalRouter(host, port, dir)
+        //host := cmd.Flag("host").Value.String()
+        //port := cmd.Flag("port").Value.String()
+        //dir := cmd.Flag("dir").Value.String()
+        //if dir[0] != '/' { dir = "/" + dir }
+        //if dir[len(dir) - 1] != '/' { dir = dir + "/" }
+        //wisp.InternalRouter(host, port, dir)
     },
 }
